@@ -7,7 +7,7 @@ terraform {
   }
 }
 
-# Configure the AWS Provider
+
 provider "aws" {
   region = "us-east-1"
 }
@@ -15,8 +15,10 @@ provider "aws" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  name    = "demo-vpc"
-  cidr    = "10.0.0.0/16"
+  version = "6.6.0"
+
+  name = "demo-vpc"
+  cidr = "10.0.0.0/16"
 
   azs             = ["us-east-1a", "us-east-1b"]
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
@@ -24,8 +26,11 @@ module "vpc" {
 
   enable_nat_gateway = true
   single_nat_gateway = true
-}
 
+  tags = {
+    Project = "demo"
+  }
+}
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -40,9 +45,8 @@ module "eks" {
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = true
 
-  enable_irsa = true
-
-  depends_on = [module.vpc]
+  enable_irsa    = true
+  create_kms_key = false   
 
   eks_managed_node_groups = {
     default = {
@@ -59,4 +63,10 @@ module "eks" {
       }
     }
   }
+
+  tags = {
+    Project = "demo"
+  }
+
+  depends_on = [module.vpc]
 }
