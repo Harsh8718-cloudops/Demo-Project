@@ -80,6 +80,10 @@ pipeline {
         expression { params.ACTION == 'apply' }
       }
       steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-creds']
+        ]) {
         dir('terraform') {
           sh """
             terraform plan -out=tfplan
@@ -87,6 +91,7 @@ pipeline {
           """
         }
       }
+    }
     }
 
     stage('Manual Approval') {
@@ -109,6 +114,10 @@ pipeline {
 
     stage('Terraform Apply / Destroy') {
       steps {
+         withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-creds']
+        ]) {
         dir('terraform') {
           script {
             if (params.ACTION == 'apply') {
@@ -119,6 +128,7 @@ pipeline {
           }
         }
       }
+    }
     }
 
     stage('Configure kubectl') {
