@@ -1,7 +1,4 @@
 terraform {
-  # Minimum Terraform CLI version required
-  required_version = ">= 1.12.0"
-
   # Required providers and version constraints
   required_providers {
     aws = {

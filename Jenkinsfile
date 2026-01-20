@@ -87,7 +87,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/vpc') {
+          dir('terraform/Terraform Manifest/vpc') {
             sh 'terraform init -input=false'
           }
         }
@@ -107,7 +107,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/vpc') {
+          dir('terraform/Terraform Manifest/vpc') {
             sh '''
               terraform plan -out=tfplan
               terraform show -no-color tfplan > tfplan.txt
@@ -133,7 +133,7 @@ pipeline {
               parameters: [
                 text(
                   name: 'VPC Terraform Plan',
-                  defaultValue: readFile('terraform/vpc/tfplan.txt')
+                  defaultValue: readFile('terraform/Terraform Manifest/vpc/tfplan.txt')
                 )
               ]
       }
@@ -149,7 +149,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/vpc') {
+          dir('terraform/Terraform Manifest/vpc') {
             script {
               if (params.ACTION == 'apply') {
                 sh 'terraform apply -auto-approve tfplan'
@@ -175,7 +175,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/eks') {
+          dir('terraform/Terraform Manifest/eks') {
             sh 'terraform init -input=false'
           }
         }
@@ -195,7 +195,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/eks') {
+          dir('terraform/Terraform Manifest/eks') {
             sh '''
               terraform plan -out=tfplan
               terraform show -no-color tfplan > tfplan.txt
@@ -221,7 +221,7 @@ pipeline {
               parameters: [
                 text(
                   name: 'EKS Terraform Plan',
-                  defaultValue: readFile('terraform/eks/tfplan.txt')
+                  defaultValue: readFile('terraform/Terraform Manifest/eks/tfplan.txt')
                 )
               ]
       }
@@ -237,7 +237,7 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform/eks') {
+          dir('terraform/Terraform Manifest/eks') {
             script {
               if (params.ACTION == 'apply') {
                 sh 'terraform apply -auto-approve tfplan'
