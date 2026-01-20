@@ -2,7 +2,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.40.0, < 6.0.0"
+      version = "~> 6.0"
     }
   }
 }
@@ -34,19 +34,16 @@ module "vpc" {
 
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.8.5"
+  version = "21.15.1"
 
-  cluster_name    = "demo-eks"
-  cluster_version = "1.29"
+  name    = "demo-eks"
+  kubernetes_version = 1.33
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  cluster_endpoint_public_access  = true
-  cluster_endpoint_private_access = true
-
-  enable_irsa    = true
-  create_kms_key = false   
+  endpoint_public_access  = true
+ 
 
   eks_managed_node_groups = {
     default = {
