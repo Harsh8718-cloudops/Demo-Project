@@ -28,6 +28,10 @@ pipeline {
 
   stages {
 
+    /* =====================================================
+       CHECKOUT
+    ===================================================== */
+
     stage('Checkout Code') {
       steps {
         git branch: 'main',
@@ -35,17 +39,28 @@ pipeline {
       }
     }
 
+    /* =====================================================
+       CI : DOCKER BUILD & PUSH
+       (Only when ACTION = apply)
+    ===================================================== */
+
     stage('Build Docker Image') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
       steps {
         dir('app') {
-          sh """
+          sh '''
             docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-          """
+          '''
         }
       }
     }
 
     stage('Push Docker Image') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
       steps {
         withCredentials([
           usernamePassword(
@@ -54,28 +69,36 @@ pipeline {
             passwordVariable: 'DOCKER_PASS'
           )
         ]) {
-          sh """
+          sh '''
             echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
             docker push ${IMAGE_NAME}:${IMAGE_TAG}
-          """
+          '''
         }
       }
     }
 
-    stage('Terraform Init') {
+    /* =====================================================
+       VPC : INIT
+    ===================================================== */
+
+    stage('VPC - Terraform Init') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-          dir('terraform') {
+          dir('terraform/vpc') {
             sh 'terraform init -input=false'
           }
         }
       }
     }
 
-    stage('Terraform Plan') {
+    /* =====================================================
+       VPC : PLAN
+    ===================================================== */
+
+    stage('VPC - Terraform Plan') {
       when {
         expression { params.ACTION == 'apply' }
       }
@@ -84,17 +107,21 @@ pipeline {
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-        dir('terraform') {
-          sh """
-            terraform plan -out=tfplan
-            terraform show -no-color tfplan > tfplan.txt
-          """
+          dir('terraform/vpc') {
+            sh '''
+              terraform plan -out=tfplan
+              terraform show -no-color tfplan > tfplan.txt
+            '''
+          }
         }
       }
     }
-    }
 
-    stage('Manual Approval') {
+    /* =====================================================
+       VPC : APPROVAL
+    ===================================================== */
+
+    stage('VPC - Manual Approval') {
       when {
         allOf {
           expression { params.ACTION == 'apply' }
@@ -102,68 +129,164 @@ pipeline {
         }
       }
       steps {
-        input message: 'Approve Terraform Apply?',
+        input message: 'Approve VPC Terraform Apply?',
               parameters: [
                 text(
-                  name: 'Terraform Plan',
-                  defaultValue: readFile('terraform/tfplan.txt')
+                  name: 'VPC Terraform Plan',
+                  defaultValue: readFile('terraform/vpc/tfplan.txt')
                 )
               ]
       }
     }
 
-    stage('Terraform Apply / Destroy') {
+    /* =====================================================
+       VPC : APPLY / DESTROY
+    ===================================================== */
+
+    stage('VPC - Terraform Apply / Destroy') {
       steps {
-         withCredentials([
+        withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
-        dir('terraform') {
-          script {
-            if (params.ACTION == 'apply') {
-              sh 'terraform apply -auto-approve tfplan'
-            } else {
-              sh 'terraform destroy -auto-approve'
+          dir('terraform/vpc') {
+            script {
+              if (params.ACTION == 'apply') {
+                sh 'terraform apply -auto-approve tfplan'
+              } else {
+                sh 'terraform destroy -auto-approve'
+              }
             }
           }
         }
       }
     }
+
+    /* =====================================================
+       EKS : INIT (AFTER VPC)
+    ===================================================== */
+
+    stage('EKS - Terraform Init') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-creds']
+        ]) {
+          dir('terraform/eks') {
+            sh 'terraform init -input=false'
+          }
+        }
+      }
     }
+
+    /* =====================================================
+       EKS : PLAN
+    ===================================================== */
+
+    stage('EKS - Terraform Plan') {
+      when {
+        expression { params.ACTION == 'apply' }
+      }
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-creds']
+        ]) {
+          dir('terraform/eks') {
+            sh '''
+              terraform plan -out=tfplan
+              terraform show -no-color tfplan > tfplan.txt
+            '''
+          }
+        }
+      }
+    }
+
+    /* =====================================================
+       EKS : APPROVAL
+    ===================================================== */
+
+    stage('EKS - Manual Approval') {
+      when {
+        allOf {
+          expression { params.ACTION == 'apply' }
+          expression { !params.AUTO_APPROVE }
+        }
+      }
+      steps {
+        input message: 'Approve EKS Terraform Apply?',
+              parameters: [
+                text(
+                  name: 'EKS Terraform Plan',
+                  defaultValue: readFile('terraform/eks/tfplan.txt')
+                )
+              ]
+      }
+    }
+
+    /* =====================================================
+       EKS : APPLY / DESTROY
+    ===================================================== */
+
+    stage('EKS - Terraform Apply / Destroy') {
+      steps {
+        withCredentials([
+          [$class: 'AmazonWebServicesCredentialsBinding',
+           credentialsId: 'aws-creds']
+        ]) {
+          dir('terraform/eks') {
+            script {
+              if (params.ACTION == 'apply') {
+                sh 'terraform apply -auto-approve tfplan'
+              } else {
+                sh 'terraform destroy -auto-approve'
+              }
+            }
+          }
+        }
+      }
+    }
+
+    /* =====================================================
+       KUBECTL CONFIG + DEPLOY
+    ===================================================== */
 
     stage('Configure kubectl') {
       when {
         expression { params.ACTION == 'apply' }
       }
       steps {
-        sh """
+        sh '''
           aws eks update-kubeconfig \
             --region ${AWS_REGION} \
             --name ${CLUSTER_NAME}
-        """
+        '''
       }
     }
 
-    stage('Deploy to EKS') {
+    stage('Deploy Application to EKS') {
       when {
         expression { params.ACTION == 'apply' }
       }
       steps {
-        sh """
-          kubectl set image deployment/demo-app \
-            demo=${IMAGE_NAME}:${IMAGE_TAG} --record
+        sh '''
           kubectl apply -f k8s/
-        """
+          kubectl set image deployment/demo-app \
+            demo=${IMAGE_NAME}:${IMAGE_TAG} --record || true
+        '''
       }
     }
   }
 
   post {
     success {
-      echo "Pipeline completed successfully!"
+      echo "CI + VPC + EKS pipeline completed successfully!"
     }
     failure {
-      echo "Pipeline failed. Please check logs."
+      echo "Pipeline failed. Check logs."
     }
     cleanup {
       cleanWs()
