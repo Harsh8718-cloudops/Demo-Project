@@ -9,7 +9,7 @@ pipeline {
   parameters {
     choice(
       name: 'ACTION',
-      choices: ['apply', 'destroy'],
+      choices: ['apply'],
       description: 'Terraform action'
     )
     booleanParam(
@@ -24,11 +24,10 @@ pipeline {
     IMAGE_TAG    = "${BUILD_NUMBER}"
     AWS_REGION   = "us-east-1"
     CLUSTER_NAME = "demo-eks"
+    SONAR_HOME = tool "Sonar"
   }
 
   stages {
-
-   
 
     stage('Checkout Code') {
       steps {
@@ -40,7 +39,10 @@ pipeline {
     stage("Trivy: Filesystem scan"){
             steps{
                 script{
-                    sh "trivy fs ."
+                  sh '''
+                    set -euo pipefail
+                    trivy fs .
+                    '''
                 }
             }
         }
@@ -58,7 +60,10 @@ pipeline {
             steps{
                 script{
                     withSonarQubeEnv("${SonarQubeAPI}"){
-                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=${Projectname} -Dsonar.projectKey=${ProjectKey} -X"
+                    sh '''
+                    set -euo pipefail
+                    $SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=${Projectname} -Dsonar.projectKey=${ProjectKey} -X
+                    '''
             }
                 }
             }
@@ -75,12 +80,11 @@ pipeline {
         }
 
     stage('Build Docker Image') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
+      
       steps {
         dir('app') {
           sh '''
+            set -euo pipefail
             docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
           '''
         }
@@ -88,9 +92,7 @@ pipeline {
     }
 
     stage('Push Docker Image') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
+      
       steps {
         withCredentials([
           usernamePassword(
@@ -100,7 +102,8 @@ pipeline {
           )
         ]) {
           sh '''
-            echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+            set -euo pipefail
+            docker login -u ${DOCKER_USER} --password-stdin <<< "${DOCKER_PASS}"
             docker push ${IMAGE_NAME}:${IMAGE_TAG}
           '''
         }
@@ -118,6 +121,7 @@ pipeline {
            credentialsId: 'aws-creds']
         ]) {
           dir('terraform/Terraform Manifest/vpc') {
+            sh "set -euo pipefail"
             sh 'terraform init -input=false'
           }
         }
@@ -129,9 +133,7 @@ pipeline {
     ===================================================== */
 
     stage('VPC - Terraform Plan') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
+     
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -139,6 +141,7 @@ pipeline {
         ]) {
           dir('terraform/Terraform Manifest/vpc') {
             sh '''
+              set -euo pipefail
               terraform plan -out=tfplan
               terraform show -no-color tfplan > tfplan.txt
             '''
@@ -153,11 +156,9 @@ pipeline {
 
     stage('VPC - Manual Approval') {
       when {
-        allOf {
-          expression { params.ACTION == 'apply' }
+        
           expression { !params.AUTO_APPROVE }
         }
-      }
       steps {
         input message: 'Approve VPC Terraform Apply?',
               parameters: [
@@ -173,7 +174,7 @@ pipeline {
        VPC : APPLY / DESTROY
     ===================================================== */
 
-    stage('VPC - Terraform Apply / Destroy') {
+    stage('VPC - Terraform Apply') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -181,32 +182,34 @@ pipeline {
         ]) {
           dir('terraform/Terraform Manifest/vpc') {
             script {
-              if (params.ACTION == 'apply') {
-                sh 'terraform apply -auto-approve tfplan'
-              } else {
-                sh 'terraform destroy -auto-approve'
+             
+                sh '''
+                 set -euo pipefail
+                 terraform apply -auto-approve tfplan
+                '''
+              } 
               }
-            }
           }
         }
       }
-    }
+    
 
     /* =====================================================
        EKS : INIT (AFTER VPC)
     ===================================================== */
 
     stage('EKS - Terraform Init') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
+      
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
            credentialsId: 'aws-creds']
         ]) {
           dir('terraform/Terraform Manifest/eks') {
-            sh 'terraform init -input=false'
+            sh '''
+              set -euo pipefail
+              terraform init -input=false
+              '''
           }
         }
       }
@@ -217,9 +220,7 @@ pipeline {
     ===================================================== */
 
     stage('EKS - Terraform Plan') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
+     
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -227,6 +228,7 @@ pipeline {
         ]) {
           dir('terraform/Terraform Manifest/eks') {
             sh '''
+              set -euo pipefail
               terraform plan -out=tfplan
               terraform show -no-color tfplan > tfplan.txt
             '''
@@ -241,11 +243,10 @@ pipeline {
 
     stage('EKS - Manual Approval') {
       when {
-        allOf {
-          expression { params.ACTION == 'apply' }
+       
           expression { !params.AUTO_APPROVE }
         }
-      }
+      
       steps {
         input message: 'Approve EKS Terraform Apply?',
               parameters: [
@@ -261,7 +262,7 @@ pipeline {
        EKS : APPLY / DESTROY
     ===================================================== */
 
-    stage('EKS - Terraform Apply / Destroy') {
+    stage('EKS - Terraform Apply') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -269,11 +270,12 @@ pipeline {
         ]) {
           dir('terraform/Terraform Manifest/eks') {
             script {
-              if (params.ACTION == 'apply') {
-                sh 'terraform apply -auto-approve tfplan'
-              } else {
-                sh 'terraform destroy -auto-approve'
-              }
+             
+                sh '''
+                  set -euo pipefail
+                  terraform apply -auto-approve tfplan
+                '''  
+              
             }
           }
         }
@@ -290,6 +292,7 @@ pipeline {
       }
       steps {
         sh '''
+          set -euo pipefail
           aws eks update-kubeconfig \
             --region ${AWS_REGION} \
             --name ${CLUSTER_NAME}
@@ -298,14 +301,12 @@ pipeline {
     }
 
     stage('Deploy Application to EKS') {
-      when {
-        expression { params.ACTION == 'apply' }
-      }
       steps {
         sh '''
+          set -euo pipefail
           kubectl apply -f k8s/
           kubectl set image deployment/demo-app \
-            demo=${IMAGE_NAME}:${IMAGE_TAG} --record || true
+            demo=${IMAGE_NAME}:${IMAGE_TAG}
         '''
       }
     }
