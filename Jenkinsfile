@@ -110,11 +110,9 @@ pipeline {
       }
     }
 
-    /* =====================================================
-       VPC : INIT
-    ===================================================== */
+  
 
-    stage('VPC - Terraform Init') {
+    stage('Terraform Init') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -132,7 +130,7 @@ pipeline {
        VPC : PLAN
     ===================================================== */
 
-    stage('VPC - Terraform Plan') {
+    stage('Terraform Plan') {
      
       steps {
         withCredentials([
@@ -154,7 +152,7 @@ pipeline {
        VPC : APPROVAL
     ===================================================== */
 
-    stage('VPC - Manual Approval') {
+    stage('Manual Approval') {
       when {
         
           expression { !params.AUTO_APPROVE }
@@ -174,7 +172,7 @@ pipeline {
        VPC : APPLY / DESTROY
     ===================================================== */
 
-    stage('VPC - Terraform Apply') {
+    stage('Terraform Apply') {
       steps {
         withCredentials([
           [$class: 'AmazonWebServicesCredentialsBinding',
@@ -194,94 +192,7 @@ pipeline {
       }
     
 
-    /* =====================================================
-       EKS : INIT (AFTER VPC)
-    ===================================================== */
-
-    stage('EKS - Terraform Init') {
-      
-      steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws-creds']
-        ]) {
-          dir('terraform/Terraform Manifest/eks') {
-            sh '''
-              set -euo pipefail
-              terraform init -input=false
-              '''
-          }
-        }
-      }
-    }
-
-    /* =====================================================
-       EKS : PLAN
-    ===================================================== */
-
-    stage('EKS - Terraform Plan') {
-     
-      steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws-creds']
-        ]) {
-          dir('terraform/Terraform Manifest/eks') {
-            sh '''
-              set -euo pipefail
-              terraform plan -out=tfplan
-              terraform show -no-color tfplan > tfplan.txt
-            '''
-          }
-        }
-      }
-    }
-
-    /* =====================================================
-       EKS : APPROVAL
-    ===================================================== */
-
-    stage('EKS - Manual Approval') {
-      when {
-       
-          expression { !params.AUTO_APPROVE }
-        }
-      
-      steps {
-        input message: 'Approve EKS Terraform Apply?',
-              parameters: [
-                text(
-                  name: 'EKS Terraform Plan',
-                  defaultValue: readFile('terraform/Terraform Manifest/eks/tfplan.txt')
-                )
-              ]
-      }
-    }
-
-    /* =====================================================
-       EKS : APPLY / DESTROY
-    ===================================================== */
-
-    stage('EKS - Terraform Apply') {
-      steps {
-        withCredentials([
-          [$class: 'AmazonWebServicesCredentialsBinding',
-           credentialsId: 'aws-creds']
-        ]) {
-          dir('terraform/Terraform Manifest/eks') {
-            script {
-             
-                sh '''
-                  set -euo pipefail
-                  terraform apply -auto-approve tfplan
-                '''  
-              
-            }
-          }
-        }
-      }
-    }
-
+   
     /* =====================================================
        KUBECTL CONFIG + DEPLOY
     ===================================================== */
