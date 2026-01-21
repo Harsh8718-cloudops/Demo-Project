@@ -28,9 +28,7 @@ pipeline {
 
   stages {
 
-    /* =====================================================
-       CHECKOUT
-    ===================================================== */
+   
 
     stage('Checkout Code') {
       steps {
@@ -39,10 +37,42 @@ pipeline {
       }
     }
 
-    /* =====================================================
-       CI : DOCKER BUILD & PUSH
-       (Only when ACTION = apply)
-    ===================================================== */
+    stage("Trivy: Filesystem scan"){
+            steps{
+                script{
+                    sh "trivy fs ."
+                }
+            }
+        }
+
+    stage("OWASP: Dependency check"){
+            steps{
+                script{
+                    dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'OWASP'
+                    dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+                }
+            }
+        }
+        
+    stage("SonarQube: Code Analysis"){
+            steps{
+                script{
+                    withSonarQubeEnv("${SonarQubeAPI}"){
+                    sh "$SONAR_HOME/bin/sonar-scanner -Dsonar.projectName=${Projectname} -Dsonar.projectKey=${ProjectKey} -X"
+            }
+                }
+            }
+        }
+        
+    stage("SonarQube: Code Quality Gates"){
+            steps{
+                script{
+                    timeout(time: 1, unit: "MINUTES"){
+                    waitForQualityGate abortPipeline: false
+            }
+                }
+            }
+        }
 
     stage('Build Docker Image') {
       when {
